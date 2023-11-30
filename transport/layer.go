@@ -182,21 +182,9 @@ func (tpl *layer) Listen(network string, addr string, options ...ListenOption) e
 	default:
 	}
 
-	protocol, ok := tpl.protocols.get(protocolKey(network))
-	if !ok {
-		var err error
-		protocol, err = protocolFactory(
-			network,
-			tpl.pmsgs,
-			tpl.perrs,
-			tpl.canceled,
-			tpl.msgMapper,
-			tpl.Log(),
-		)
-		if err != nil {
-			return err
-		}
-		tpl.protocols.put(protocolKey(protocol.Network()), protocol)
+	protocol, err := tpl.getProtocol(network)
+	if err != nil {
+		return err
 	}
 	target, err := NewTargetFromAddr(addr)
 	if err != nil {
@@ -237,12 +225,12 @@ func (tpl *layer) Send(msg sip.Message) error {
 	case sip.Request:
 		network := msg.Transport()
 		// rewrite sent-by transport
-		viaHop.Transport = network
+		viaHop.Transport = strings.ToUpper(network)
 		viaHop.Host = tpl.ip.String()
 
-		protocol, ok := tpl.protocols.get(protocolKey(network))
-		if !ok {
-			return UnsupportedProtocolError(fmt.Sprintf("protocol %s is not supported", network))
+		protocol, err := tpl.getProtocol(network)
+		if err != nil {
+			return err
 		}
 
 		// rewrite sent-by port
@@ -298,7 +286,9 @@ func (tpl *layer) Send(msg sip.Message) error {
 				}
 			}
 		}
-
+		if msg.Recipient() != nil && msg.Recipient().UriParams() != nil {
+			msg.Recipient().UriParams().Remove("transport")
+		}
 		logger := log.AddFieldsFrom(tpl.Log(), protocol, msg)
 		logger.Debugf("sending SIP request:\n%s", msg)
 
@@ -310,9 +300,9 @@ func (tpl *layer) Send(msg sip.Message) error {
 		// RFC 3261 - 18.2.2.
 	case sip.Response:
 		// resolve protocol from Via
-		protocol, ok := tpl.protocols.get(protocolKey(msg.Transport()))
-		if !ok {
-			return UnsupportedProtocolError(fmt.Sprintf("protocol %s is not supported", viaHop.Transport))
+		protocol, err := tpl.getProtocol(msg.Transport())
+		if err != nil {
+			return err
 		}
 
 		target, err := NewTargetFromAddr(msg.Destination())
@@ -334,6 +324,20 @@ func (tpl *layer) Send(msg sip.Message) error {
 			Msg: msg.String(),
 		}
 	}
+}
+
+func (tpl *layer) getProtocol(network string) (Protocol, error) {
+	network = strings.ToLower(network)
+	return tpl.protocols.getOrPutNew(protocolKey(network), func() (Protocol, error) {
+		return protocolFactory(
+			network,
+			tpl.pmsgs,
+			tpl.perrs,
+			tpl.canceled,
+			tpl.msgMapper,
+			tpl.Log(),
+		)
+	})
 }
 
 func (tpl *layer) serveProtocols() {
@@ -435,6 +439,22 @@ func (store *protocolStore) get(key protocolKey) (Protocol, bool) {
 	defer store.mu.RUnlock()
 	protocol, ok := store.protocols[key]
 	return protocol, ok
+}
+
+func (store *protocolStore) getOrPutNew(key protocolKey, factory func() (Protocol, error)) (Protocol, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	protocol, ok := store.protocols[key]
+	if ok {
+		return protocol, nil
+	}
+	var err error
+	protocol, err = factory()
+	if err != nil {
+		return nil, err
+	}
+	store.protocols[key] = protocol
+	return protocol, nil
 }
 
 func (store *protocolStore) drop(key protocolKey) bool {

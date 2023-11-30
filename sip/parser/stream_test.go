@@ -3,6 +3,7 @@ package parser_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -212,6 +213,7 @@ func TestSipUris(t *testing.T) {
 		{sipUriInput("sip:bob:Hunter2@example.com"), &sipUriResult{pass, sip.SipUri{FUser: sip.String{"bob"}, FPassword: sip.String{"Hunter2"}, FHost: "example.com", FUriParams: noParams, FHeaders: noParams}}},
 		{sipUriInput("sips:bob:Hunter2@example.com"), &sipUriResult{pass, sip.SipUri{FIsEncrypted: true, FUser: sip.String{"bob"}, FPassword: sip.String{"Hunter2"},
 			FHost: "example.com", FUriParams: noParams, FHeaders: noParams}}},
+		{sipUriInput("sip:%D0%B8%D0%B2%D0%B0%D0%BD:qwerty@%D0%BC%D0%B8%D1%80.%D1%80%D1%84"), &sipUriResult{pass, sip.SipUri{FUser: sip.String{"иван"}, FPassword: sip.String{"qwerty"}, FHost: "мир.рф", FUriParams: noParams, FHeaders: noParams}}},
 		{sipUriInput("sips:bob@example.com"), &sipUriResult{pass, sip.SipUri{FIsEncrypted: true, FUser: sip.String{"bob"}, FPassword: nil, FHost: "example.com", FUriParams: noParams, FHeaders: noParams}}},
 		{sipUriInput("sip:example.com"), &sipUriResult{pass, sip.SipUri{FUser: nil, FPassword: nil, FHost: "example.com", FUriParams: noParams, FHeaders: noParams}}},
 		{sipUriInput("example.com"), &sipUriResult{fail, sip.SipUri{}}},
@@ -278,10 +280,15 @@ func TestSipUris(t *testing.T) {
 		{sipUriInput("sips:bob@example.com:5;foo=baz?baz=bar&a=b"), &sipUriResult{pass, sip.SipUri{FIsEncrypted: true, FUser: sip.String{"bob"}, FPassword: nil, FHost: "example.com", FPort: &port5,
 			FUriParams: sip.NewParams().Add("foo", sip.String{"baz"}),
 			FHeaders:   sip.NewParams().Add("baz", sip.String{"bar"}).Add("a", sip.String{"b"})}}},
+		{sipUriInput("sips:bob@example.com:5;foo=\"%D0%B8%D0%B2%D0%B0%D0%BD%26%D0%BC%D0%B0%D1%80%D1%8C%D1%8F 123\""), &sipUriResult{pass, sip.SipUri{FIsEncrypted: true, FUser: sip.String{"bob"}, FPassword: nil, FHost: "example.com", FPort: &port5,
+			FUriParams: sip.NewParams().Add("foo", sip.String{"иван&марья 123"}),
+			FHeaders:   noParams}}},
 		{sipUriInput("sip:bob@example.com:5;foo=baz?baz=bar&foo&a=b"), &sipUriResult{fail, sip.SipUri{}}},
 		{sipUriInput("sip:bob@example.com:5;foo=baz?foo"), &sipUriResult{fail, sip.SipUri{}}},
 		{sipUriInput("sip:bob@example.com:50;foo=baz?foo"), &sipUriResult{fail, sip.SipUri{}}},
 		{sipUriInput("sip:bob@example.com:50;foo=baz?foo=bar&baz"), &sipUriResult{fail, sip.SipUri{}}},
+		{sipUriInput("sip"), &sipUriResult{fail, sip.SipUri{}}},
+		{sipUriInput("sips"), &sipUriResult{fail, sip.SipUri{}}},
 	}, t)
 }
 
@@ -301,23 +308,23 @@ func TestHostPort(t *testing.T) {
 }
 
 /*
-func TestHeaderBlocks(t *testing.T) {
-	doTests([]test{
-		test{headerBlockInput([]string{"All on one line."}), &headerBlockResult{"All on one line.", 1}},
-		test{headerBlockInput([]string{"Line one", "Line two."}), &headerBlockResult{"Line one", 1}},
-		test{headerBlockInput([]string{"Line one", " then an indent"}), &headerBlockResult{"Line one then an indent", 2}},
-		test{headerBlockInput([]string{"Line one", " then an indent", "then line two"}), &headerBlockResult{"Line one then an indent", 2}},
-		test{headerBlockInput([]string{"Line one", "Line two", " then an indent"}), &headerBlockResult{"Line one", 1}},
-		test{headerBlockInput([]string{"Line one", "\twith tab indent"}), &headerBlockResult{"Line one with tab indent", 2}},
-		test{headerBlockInput([]string{"Line one", "      with a big indent"}), &headerBlockResult{"Line one with a big indent", 2}},
-		test{headerBlockInput([]string{"Line one", " \twith space then tab"}), &headerBlockResult{"Line one with space then tab", 2}},
-		test{headerBlockInput([]string{"Line one", "\t    with tab then spaces"}), &headerBlockResult{"Line one with tab then spaces", 2}},
-		test{headerBlockInput([]string{""}), &headerBlockResult{"", 0}},
-		test{headerBlockInput([]string{" "}), &headerBlockResult{" ", 1}},
-		test{headerBlockInput([]string{}), &headerBlockResult{"", 0}},
-		test{headerBlockInput([]string{" foo"}), &headerBlockResult{" foo", 1}},
-	}, t)
-}
+	func TestHeaderBlocks(t *testing.T) {
+		doTests([]test{
+			test{headerBlockInput([]string{"All on one line."}), &headerBlockResult{"All on one line.", 1}},
+			test{headerBlockInput([]string{"Line one", "Line two."}), &headerBlockResult{"Line one", 1}},
+			test{headerBlockInput([]string{"Line one", " then an indent"}), &headerBlockResult{"Line one then an indent", 2}},
+			test{headerBlockInput([]string{"Line one", " then an indent", "then line two"}), &headerBlockResult{"Line one then an indent", 2}},
+			test{headerBlockInput([]string{"Line one", "Line two", " then an indent"}), &headerBlockResult{"Line one", 1}},
+			test{headerBlockInput([]string{"Line one", "\twith tab indent"}), &headerBlockResult{"Line one with tab indent", 2}},
+			test{headerBlockInput([]string{"Line one", "      with a big indent"}), &headerBlockResult{"Line one with a big indent", 2}},
+			test{headerBlockInput([]string{"Line one", " \twith space then tab"}), &headerBlockResult{"Line one with space then tab", 2}},
+			test{headerBlockInput([]string{"Line one", "\t    with tab then spaces"}), &headerBlockResult{"Line one with tab then spaces", 2}},
+			test{headerBlockInput([]string{""}), &headerBlockResult{"", 0}},
+			test{headerBlockInput([]string{" "}), &headerBlockResult{" ", 1}},
+			test{headerBlockInput([]string{}), &headerBlockResult{"", 0}},
+			test{headerBlockInput([]string{" foo"}), &headerBlockResult{" foo", 1}},
+		}, t)
+	}
 */
 func TestToHeaders(t *testing.T) {
 	fooEqBar := sip.NewParams().Add("foo", sip.String{"bar"})
@@ -1024,6 +1031,15 @@ func TestUserAgent(t *testing.T) {
 	}, t)
 }
 
+func TestServer(t *testing.T) {
+	doTests([]test{
+		{serverInput("Server: GoSIP v1.2.3"), &serverResult{pass, "GoSIP v1.2.3"}},
+		{serverInput("Server:      GoSIP v1.2.3"), &serverResult{pass, "GoSIP v1.2.3"}},
+		{serverInput("Server:\tGoSIP v1.2.3"), &serverResult{pass, "GoSIP v1.2.3"}},
+		{serverInput("Server:\n  GoSIP v1.2.3"), &serverResult{pass, "GoSIP v1.2.3"}},
+	}, t)
+}
+
 func TestAllow(t *testing.T) {
 	doTests([]test{
 		{allowInput("Allow: INVITE, ACK, BYE"), &allowResult{pass, sip.AllowHeader{sip.INVITE, sip.ACK, sip.BYE}}},
@@ -1465,6 +1481,54 @@ func TestStreamedParse3(t *testing.T) {
 					},
 				},
 				"This is an ack! : \n ! \r\n contact:",
+				nil,
+			),
+			nil,
+			nil},
+	}}
+
+	test.Test(t)
+}
+
+// Test writing 2 malformed messages followed by 1 correct message
+func TestStreamedParse4(t *testing.T) {
+	contentLength := sip.ContentLength(0)
+	maxForwards := sip.MaxForwards(70)
+	test := ParserTest{true, []parserTestStep{
+		// Steps each have: Input, result, sent error, returned error
+		// invalid start line
+		{"INVITE sip:bob@biloxi.com\r\n" +
+			"Content-Length: 0\r\n\r\n" +
+			"INVITE sip:bob@biloxi.com\r\n" +
+			"Content-Length: 0\r\n\r\n",
+			nil,
+			errors.New("malformed message start line"),
+			nil},
+		// missing Content-Length
+		{"INVITE sip:bob@biloxi.com SIP/2.0\r\n" +
+			"Max-Forwards: 70\r\n\r\n",
+			nil,
+			errors.New("missing content-length header"),
+			nil},
+		// valid
+		{"INVITE sip:bob@biloxi.com SIP/2.0\r\n" +
+			"Max-Forwards: 70\r\n" +
+			"Content-Length: 0\r\n\r\n",
+			sip.NewRequest(
+				"",
+				sip.INVITE,
+				&sip.SipUri{
+					FIsEncrypted: false,
+					FUser:        sip.String{Str: "bob"},
+					FPassword:    nil,
+					FHost:        "biloxi.com",
+					FPort:        nil,
+					FUriParams:   noParams,
+					FHeaders:     noParams,
+				},
+				"SIP/2.0",
+				[]sip.Header{&maxForwards, &contentLength},
+				"",
 				nil,
 			),
 			nil,
@@ -2067,6 +2131,41 @@ func (expected *userAgentResult) equals(other result) (equal bool, reason string
 	return true, ""
 }
 
+type serverInput string
+
+func (data serverInput) String() string {
+	return string(data)
+}
+
+func (data serverInput) evaluate() result {
+	headers, err := parseHeader(string(data))
+	if len(headers) == 1 {
+		return &serverResult{err, *(headers[0].(*sip.ServerHeader))}
+	} else if len(headers) == 0 {
+		return &serverResult{err, ""}
+	} else {
+		panic(fmt.Sprintf("Multiple headers returned by Server test: %s", string(data)))
+	}
+}
+
+type serverResult struct {
+	err    error
+	header sip.ServerHeader
+}
+
+func (expected *serverResult) equals(other result) (equal bool, reason string) {
+	actual := *(other.(*serverResult))
+	if expected.err == nil && actual.err != nil {
+		return false, fmt.Sprintf("unexpected error: %s", actual.err.Error())
+	} else if expected.err != nil && actual.err == nil {
+		return false, fmt.Sprintf("unexpected success: got \"%s\"", actual.header.String())
+	} else if actual.err == nil && expected.header != actual.header {
+		return false, fmt.Sprintf("unexpected Server value: expected \"%s\", got \"%s\"",
+			expected.header, actual.header)
+	}
+	return true, ""
+}
+
 type allowInput string
 
 func (data allowInput) String() string {
@@ -2259,6 +2358,24 @@ func (pt *ParserTest) Test(t *testing.T) {
 			return
 		}
 	}
+	if !pt.streamed {
+		p := parser.NewPacketParser(logger)
+		for stepIdx, step := range pt.steps {
+			var (
+				success bool
+				reason  string
+			)
+			msg, err := p.ParseMessage([]byte(step.input))
+			if err != nil {
+				success, reason = step.checkError(err)
+			} else {
+				success, reason = step.checkMsg(msg)
+			}
+			if !success {
+				t.Errorf("failure in pt step %d of input:\n%s\n\nfailure was: %s", stepIdx, pt.String(), reason)
+			}
+		}
+	}
 
 	testsPassed++
 	return
@@ -2284,6 +2401,35 @@ type parserTestStep struct {
 	returnedError error
 }
 
+func (step *parserTestStep) checkError(err error) (success bool, reason string) {
+	if err == nil && step.sentError != nil {
+		success = false
+		reason = fmt.Sprintf("nil error output from parser; expected: %s", step.sentError.Error())
+	} else if err != nil && step.sentError == nil {
+		success = false
+		reason = fmt.Sprintf("expected no error; parser output: %s", err.Error())
+	} else {
+		success = true
+	}
+	return
+}
+
+func (step *parserTestStep) checkMsg(msg sip.Message) (success bool, reason string) {
+	if msg == nil && step.result != nil {
+		success = false
+		reason = fmt.Sprintf("nil message returned from parser; expected:\n%s", step.result.String())
+	} else if msg != nil && step.result == nil {
+		success = false
+		reason = fmt.Sprintf("expected no message to be returned; got\n%s", msg.String())
+	} else if msg.String() != step.result.String() {
+		success = false
+		reason = fmt.Sprintf("unexpected message returned by parser; expected:\n\n%s\n\nbut got:\n\n%s", step.result.String(), msg.String())
+	} else {
+		success = true
+	}
+	return
+}
+
 func (step *parserTestStep) Test(parser parser.Parser, msgChan chan sip.Message, errChan chan error) (success bool, reason string) {
 	_, err := parser.Write([]byte(step.input))
 	if err != step.returnedError {
@@ -2299,29 +2445,10 @@ func (step *parserTestStep) Test(parser parser.Parser, msgChan chan sip.Message,
 	if err == nil {
 		select {
 		case msg := <-msgChan:
-			if msg == nil && step.result != nil {
-				success = false
-				reason = fmt.Sprintf("nil message returned from parser; expected:\n%s", step.result.String())
-			} else if msg != nil && step.result == nil {
-				success = false
-				reason = fmt.Sprintf("expected no message to be returned; got\n%s", msg.String())
-			} else if msg.String() != step.result.String() {
-				success = false
-				reason = fmt.Sprintf("unexpected message returned by parser; expected:\n\n%s\n\nbut got:\n\n%s", step.result.String(), msg.String())
-			} else {
-				success = true
-			}
+			success, reason = step.checkMsg(msg)
 		case err = <-errChan:
-			if err == nil && step.sentError != nil {
-				success = false
-				reason = fmt.Sprintf("nil error output from parser; expected: %s", step.sentError.Error())
-			} else if err != nil && step.sentError == nil {
-				success = false
-				reason = fmt.Sprintf("expected no error; parser output: %s", err.Error())
-			} else {
-				success = true
-			}
-		case <-time.After(time.Second * 1):
+			success, reason = step.checkError(err)
+		case <-time.After(time.Second):
 			if step.result != nil || step.sentError != nil {
 				success = false
 				reason = "timeout when processing input"

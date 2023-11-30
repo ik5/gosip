@@ -129,45 +129,54 @@ func (rb *RequestBuilder) AddVia(via *ViaHop) *RequestBuilder {
 }
 
 func (rb *RequestBuilder) SetFrom(address *Address) *RequestBuilder {
-	address = address.Clone()
-	if address.Uri.Host() == "" {
-		address.Uri.SetHost(rb.host)
-	}
-
-	rb.from = &FromHeader{
-		DisplayName: address.DisplayName,
-		Address:     address.Uri,
-		Params:      address.Params,
+	if address == nil {
+		rb.from = nil
+	} else {
+		address = address.Clone()
+		if address.Uri.Host() == "" {
+			address.Uri.SetHost(rb.host)
+		}
+		rb.from = &FromHeader{
+			DisplayName: address.DisplayName,
+			Address:     address.Uri,
+			Params:      address.Params,
+		}
 	}
 
 	return rb
 }
 
 func (rb *RequestBuilder) SetTo(address *Address) *RequestBuilder {
-	address = address.Clone()
-	if address.Uri.Host() == "" {
-		address.Uri.SetHost(rb.host)
-	}
-
-	rb.to = &ToHeader{
-		DisplayName: address.DisplayName,
-		Address:     address.Uri,
-		Params:      address.Params,
+	if address == nil {
+		rb.to = nil
+	} else {
+		address = address.Clone()
+		if address.Uri.Host() == "" {
+			address.Uri.SetHost(rb.host)
+		}
+		rb.to = &ToHeader{
+			DisplayName: address.DisplayName,
+			Address:     address.Uri,
+			Params:      address.Params,
+		}
 	}
 
 	return rb
 }
 
 func (rb *RequestBuilder) SetContact(address *Address) *RequestBuilder {
-	address = address.Clone()
-	if address.Uri.Host() == "" {
-		address.Uri.SetHost(rb.host)
-	}
-
-	rb.contact = &ContactHeader{
-		DisplayName: address.DisplayName,
-		Address:     address.Uri,
-		Params:      address.Params,
+	if address == nil {
+		rb.contact = nil
+	} else {
+		address = address.Clone()
+		if address.Uri.Host() == "" {
+			address.Uri.SetHost(rb.host)
+		}
+		rb.contact = &ContactHeader{
+			DisplayName: address.DisplayName,
+			Address:     address.Uri,
+			Params:      address.Params,
+		}
 	}
 
 	return rb
@@ -270,10 +279,14 @@ func (rb *RequestBuilder) Build() (Request, error) {
 		return nil, fmt.Errorf("empty 'From' header")
 	}
 	if rb.to == nil {
-		return nil, fmt.Errorf("empty 'From' header")
+		return nil, fmt.Errorf("empty 'To' header")
 	}
 
 	hdrs := make([]Header, 0)
+
+	if rb.route != nil {
+		hdrs = append(hdrs, rb.route)
+	}
 
 	if len(rb.via) != 0 {
 		via := make(ViaHeader, 0)
@@ -281,10 +294,6 @@ func (rb *RequestBuilder) Build() (Request, error) {
 			via = append(via, viaHop)
 		}
 		hdrs = append(hdrs, via)
-	}
-
-	if rb.route != nil {
-		hdrs = append(hdrs, rb.route)
 	}
 
 	hdrs = append(hdrs, rb.cseq, rb.from, rb.to, rb.callID)

@@ -238,30 +238,36 @@ func (srv *server) handleRequest(req sip.Request, tx sip.ServerTransaction) {
 	if !ok {
 		logger.Warn("SIP request handler not found")
 
-		go func(tx sip.ServerTransaction, logger log.Logger) {
-			for {
-				select {
-				case <-srv.tx.Done():
-					return
-				case err, ok := <-tx.Errors():
-					if !ok {
+		// ACK request doesn't have any transaction, so just skip this step
+		if tx != nil {
+			go func(tx sip.ServerTransaction, logger log.Logger) {
+				for {
+					select {
+					case <-srv.tx.Done():
 						return
+					case err, ok := <-tx.Errors():
+						if !ok {
+							return
+						}
+
+						logger.Warnf("error from SIP server transaction %s: %s", tx, err)
 					}
-
-					logger.Warnf("error from SIP server transaction %s: %s", tx, err)
 				}
-			}
-		}(tx, logger)
+			}(tx, logger)
+		}
 
-		res := sip.NewResponseFromRequest("", req, 405, "Method Not Allowed", "")
-		if _, err := srv.Respond(res); err != nil {
-			logger.Errorf("respond '405 Method Not Allowed' failed: %s", err)
+		// ACK request doesn't require any response, so just skip this step
+		if !req.IsAck() {
+			res := sip.NewResponseFromRequest("", req, 405, "Method Not Allowed", "")
+			if _, err := srv.Respond(res); err != nil {
+				logger.Errorf("respond '405 Method Not Allowed' failed: %s", err)
+			}
 		}
 
 		return
 	}
 
-	go handler(req, tx)
+	handler(req, tx)
 }
 
 // Send SIP message
@@ -513,9 +519,19 @@ func (srv *server) appendAutoHeaders(msg sip.Message) {
 	switch m := msg.(type) {
 	case sip.Request:
 		msgMethod = m.Method()
+
+		if hdrs := msg.GetHeaders("User-Agent"); len(hdrs) == 0 {
+			hdr := sip.UserAgentHeader(srv.userAgent)
+			msg.AppendHeader(&hdr)
+		}
 	case sip.Response:
 		if cseq, ok := m.CSeq(); ok && !m.IsProvisional() {
 			msgMethod = cseq.MethodName
+		}
+
+		if hdrs := msg.GetHeaders("Server"); len(hdrs) == 0 {
+			hdr := sip.ServerHeader(srv.userAgent)
+			msg.AppendHeader(&hdr)
 		}
 	}
 	if len(msgMethod) > 0 {
@@ -539,11 +555,6 @@ func (srv *server) appendAutoHeaders(msg sip.Message) {
 				})
 			}
 		}
-	}
-
-	if hdrs := msg.GetHeaders("User-Agent"); len(hdrs) == 0 {
-		userAgent := sip.UserAgentHeader(srv.userAgent)
-		msg.AppendHeader(&userAgent)
 	}
 
 	if hdrs := msg.GetHeaders("Content-Length"); len(hdrs) == 0 {
